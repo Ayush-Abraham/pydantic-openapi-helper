@@ -1,14 +1,61 @@
 import enum
 import warnings
+from typing import Sequence, Union, Type, Any
 
-from pydantic.utils import get_model
-from pydantic.schema import schema, get_flat_models_from_model, get_model_name_map
+from pydantic import BaseModel, TypeAdapter
+
+from pydantic.v1.utils import get_model
+from pydantic.v1.schema import schema, get_flat_models_from_model, get_model_name_map
 
 from .helper import _OpenAPIGenBaseModel, inherit_fom_basemodel
 
 
+# def get_model(obj) -> type[BaseModel]:
+#     """
+#     !!! A substitute for `pydantic.utils.get_model`, which was removed in pydantic v2.
+
+#     !!! This is my best emulation for what I understand get_model did.
+#     """
+#     try:
+#         model_cls = obj.__pydantic_model__
+#     except AttributeError:
+#         model_cls = obj
+
+#     if not isinstance(model_cls, type) or not issubclass(model_cls, BaseModel):
+#         raise TypeError("Unsupported type, must be either BaseModel or dataclass")
+#     return model_cls
+
+
+# def schema(
+#     models: Any,  # Sequence[Union[Type[BaseModel]]],
+#     *,
+#     by_alias: bool = True,
+#     title: str | None = None,
+#     description: str | None = None,
+#     ref_prefix: str = "#/components/schemas/",
+# ) -> dict[str, Any]:
+#     """!!! This is my best emulation for what I understand `pydantic.schema.schema` did."""
+
+#     definitions = {}
+
+#     for model in models:
+#         model_name = model.__name__
+#         model_schema = model.model_json_schema(
+#             by_alias=by_alias, ref_template=f"{ref_prefix}{{model}}"
+#         )
+#         definitions[model_name] = model_schema
+
+#     out: dict[str, Any] = {}
+#     if title:
+#         out["title"] = title
+#     if description:
+#         out["description"] = description
+#     out["definitions"] = definitions
+#     return out
+
+
 # list of top level class names that we should stop at
-STOPPAGE = set(['NoExtraBaseModel', 'ModelMetaclass', 'BaseModel', 'object', 'Enum'])
+STOPPAGE = set(["NoExtraBaseModel", "ModelMetaclass", "BaseModel", "object", "Enum"])
 
 
 def get_schemas_inheritance(model_cls):
@@ -19,16 +66,17 @@ def get_schemas_inheritance(model_cls):
     """
 
     # get a dictionary that maps the name of each model schema to its Pydantic class.
-    model_name_map = get_model_mapper(model_cls, STOPPAGE, full=True, include_enum=False)
+    model_name_map = get_model_mapper(
+        model_cls, STOPPAGE, full=True, include_enum=False
+    )
 
     # get the standard OpenAPI schema for Pydantic for all the new objects
-    ref_prefix = '#/components/schemas/'
-    schemas = \
-        schema(model_name_map.values(), ref_prefix=ref_prefix)['definitions']
+    ref_prefix = "#/components/schemas/"
+    schemas = schema(model_name_map.values(), ref_prefix=ref_prefix)["definitions"]
 
     # add the [possibly] needed baseclass to the list of classes
-    schemas['_OpenAPIGenBaseModel'] = dict(eval(_OpenAPIGenBaseModel.schema_json()))
-    model_name_map['_OpenAPIGenBaseModel'] = _OpenAPIGenBaseModel
+    schemas["_OpenAPIGenBaseModel"] = dict(eval(_OpenAPIGenBaseModel.schema_json()))
+    model_name_map["_OpenAPIGenBaseModel"] = _OpenAPIGenBaseModel
 
     # An empty dictionary to collect updated objects
     updated_schemas = {}
@@ -42,9 +90,9 @@ def get_schemas_inheritance(model_cls):
             main_cls = model_name_map[name]
         except KeyError:
             # enum objects are not included.
-            if 'enum' in schemas[name]:
+            if "enum" in schemas[name]:
                 continue
-            warnings.warn(f'***KeyError: {name} key not found.***')
+            warnings.warn(f"***KeyError: {name} key not found.***")
             top_classes = []
         else:
             top_classes = get_ancestors(main_cls)
@@ -52,7 +100,7 @@ def get_schemas_inheritance(model_cls):
         if not top_classes:
             # update the object to inherit from baseclass which only has type
             # this is required for dotnet bindings
-            if name != '_OpenAPIGenBaseModel':
+            if name != "_OpenAPIGenBaseModel":
                 updated_schemas[name] = inherit_fom_basemodel(schemas[name])
             continue
 
@@ -85,12 +133,12 @@ def _check_object_types(source, target, prop):
 
     In such a case we need to subclass from one higher level.
     """
-    if 'type' in source:
-        if source['type'] != 'array':
-            return source['type'] != target[prop]
+    if "type" in source:
+        if source["type"] != "array":
+            return source["type"] != target[prop]
         else:
             # for an array check both the type and the type for items
-            return (source['type'], source['items']) != target[prop]
+            return (source["type"], source["items"]) != target[prop]
 
 
 def set_inheritance(name, top_classes, schemas):
@@ -105,17 +153,17 @@ def set_inheritance(name, top_classes, schemas):
         Dict - updated schema for the object with the input name.
     """
     # this is the list of special keys that we copy in manually
-    copied_keys = set(['type', 'properties', 'required', 'additionalProperties'])
+    copied_keys = set(["type", "properties", "required", "additionalProperties"])
     # remove the class itself
-    print(f'\nProcessing {name}')
+    print(f"\nProcessing {name}")
     top_classes = top_classes[1:]
     top_class = top_classes[0]
-    tree = ['....' * (i + 1) + c.__name__ for i, c in enumerate(top_classes)]
-    print('\n'.join(tree))
+    tree = ["...." * (i + 1) + c.__name__ for i, c in enumerate(top_classes)]
+    print("\n".join(tree))
 
     # the immediate top class openapi schema
     object_dict = schemas[name]
-    if 'enum' in object_dict:
+    if "enum" in object_dict:
         return object_dict
 
     # collect required and properties from top classes and do not include them in
@@ -129,10 +177,10 @@ def set_inheritance(name, top_classes, schemas):
         try:
             schema_t = schemas[t.__name__]
         except KeyError as error:
-            raise KeyError(f'Failed to find the model name: {error}')
+            raise KeyError(f"Failed to find the model name: {error}")
 
         try:
-            tc_required = schema_t['required']
+            tc_required = schema_t["required"]
         except KeyError:
             # no required field
             continue
@@ -142,80 +190,78 @@ def set_inheritance(name, top_classes, schemas):
 
     # collect properties
     for t in top_classes:
-        tc_prop = schemas[t.__name__]['properties']
+        tc_prop = schemas[t.__name__]["properties"]
         for pn, dt in tc_prop.items():
             # collect type for every field. This is helpful to catch the cases where
             # the same field name has a different new type in the subclass and should be
             # kept to overwrite the original field.
-            if 'type' in dt:
-                if dt['type'] == 'array':
+            if "type" in dt:
+                if dt["type"] == "array":
                     # collect both the type and the type for its items
-                    top_classes_prop[pn] = dt['type'], dt['items']
+                    top_classes_prop[pn] = dt["type"], dt["items"]
                 else:
-                    top_classes_prop[pn] = dt['type']
+                    top_classes_prop[pn] = dt["type"]
             else:
-                top_classes_prop[pn] = '###'  # no type means use of oneOf or allOf
+                top_classes_prop[pn] = "###"  # no type means use of oneOf or allOf
 
     # create a new schema for this object based on the top level class
     data = {
-        'allOf': [
-            {
-                '$ref': f'#/components/schemas/{top_class.__name__}'
-            },
-            {
-                'type': 'object',
-                'required': [],
-                'properties': {}
-            }
+        "allOf": [
+            {"$ref": f"#/components/schemas/{top_class.__name__}"},
+            {"type": "object", "required": [], "properties": {}},
         ]
     }
 
     data_copy = dict(data)
 
-    if not top_classes_required and 'required' in object_dict:
+    if not top_classes_required and "required" in object_dict:
         # no required in top level class
         # add all the required to the subclass
-        for r in object_dict['required']:
-            data_copy['allOf'][1]['required'].append(r)
-    elif 'required' in object_dict and top_classes_required:
+        for r in object_dict["required"]:
+            data_copy["allOf"][1]["required"].append(r)
+    elif "required" in object_dict and top_classes_required:
         # only add the new required fields
-        for r in object_dict['required']:
+        for r in object_dict["required"]:
             if r not in top_classes_required:
-                data_copy['allOf'][1]['required'].append(r)
+                data_copy["allOf"][1]["required"].append(r)
 
     # no required fields - delete it from the dictionary
-    if len(data_copy['allOf'][1]['required']) == 0:
-        del(data_copy['allOf'][1]['required'])
+    if len(data_copy["allOf"][1]["required"]) == 0:
+        del data_copy["allOf"][1]["required"]
 
-    # get full list of the properties and add the ones that doesn't exist in 
+    # get full list of the properties and add the ones that doesn't exist in
     # ancestor objects.
-    properties = object_dict['properties']
+    properties = object_dict["properties"]
     for prop, values in properties.items():
         if prop not in top_classes_prop:
             # new field. add it to the properties
-            print(f'Extending: {prop}')
-            data_copy['allOf'][1]['properties'][prop] = values
-        elif _check_object_types(values, top_classes_prop, prop) \
-                or 'type' not in values and ('allOf' in values or 'anyOf' in values):
+            print(f"Extending: {prop}")
+            data_copy["allOf"][1]["properties"][prop] = values
+        elif (
+            _check_object_types(values, top_classes_prop, prop)
+            or "type" not in values
+            and ("allOf" in values or "anyOf" in values)
+        ):
             # same name different types
-            print(f'Found a field with the same name: {prop}.')
+            print(f"Found a field with the same name: {prop}.")
             if len(top_classes) > 1:
-                print(f'Trying {name} against {top_classes[1].__name__}.')
+                print(f"Trying {name} against {top_classes[1].__name__}.")
                 return set_inheritance(name, top_classes, schemas)
             else:
                 # try against a base object.
-                print(f'Trying {name} against OpenAPI base object.')
+                print(f"Trying {name} against OpenAPI base object.")
                 _top_classes = [_OpenAPIGenBaseModel, _OpenAPIGenBaseModel]
                 return set_inheritance(name, _top_classes, schemas)
 
     try:
-        data_copy['allOf'][1]['properties']['type'] = properties['type']
+        data_copy["allOf"][1]["properties"]["type"] = properties["type"]
     except KeyError:
-        print(f'Found object with no type: {name}')
+        print(f"Found object with no type: {name}")
 
-    if 'additionalProperties' in object_dict:
-        data_copy['allOf'][1]['additionalProperties'] = \
-            object_dict['additionalProperties']
+    if "additionalProperties" in object_dict:
+        data_copy["allOf"][1]["additionalProperties"] = object_dict[
+            "additionalProperties"
+        ]
 
     # add other items in addition to copied_keys
     for key, value in schemas[name].items():
@@ -237,7 +283,7 @@ def get_model_mapper(models, stoppage=None, full=True, include_enum=False):
         try:
             f_models = get_flat_models_from_model(get_model(model))
         except TypeError:
-            warnings.warn(f'*** Invalid input objetc: {model}')
+            warnings.warn(f"*** Invalid input objetc: {model}")
         else:
             flat_models.extend(f_models)
 
@@ -253,7 +299,7 @@ def get_model_mapper(models, stoppage=None, full=True, include_enum=False):
 
     if full:
         stoppage = stoppage or set(
-            ['NoExtraBaseModel', 'ModelMetaclass', 'BaseModel', 'object', 'str', 'Enum']
+            ["NoExtraBaseModel", "ModelMetaclass", "BaseModel", "object", "str", "Enum"]
         )
         # Pydantic does not necessarily add all the baseclasses to the OpenAPI
         # documentation. We check all of them and them to the list if they are not
@@ -269,17 +315,17 @@ def get_model_mapper(models, stoppage=None, full=True, include_enum=False):
         # filter out enum objects
         if not include_enum:
             model_name_map = {
-                k: v for k, v in model_name_map.items()
+                k: v
+                for k, v in model_name_map.items()
                 if not isinstance(v, enum.EnumMeta)
             }
 
         # remove base type objects
         model_name_map = {
-            k: v for k, v in model_name_map.items()
-            if k not in ('str', 'int', 'dict')
+            k: v for k, v in model_name_map.items() if k not in ("str", "int", "dict")
         }
 
-    assert len(model_name_map) > 0, 'Found no valid Pydantic model in input classes.'
+    assert len(model_name_map) > 0, "Found no valid Pydantic model in input classes."
 
     return model_name_map
 
@@ -297,7 +343,7 @@ def class_mapper(models, find_and_replace=None):
 
     """
 
-    if not hasattr(models, '__iter__'):
+    if not hasattr(models, "__iter__"):
         models = [models]
 
     mapper = get_model_mapper(models, full=True, include_enum=True)
@@ -307,7 +353,7 @@ def class_mapper(models, find_and_replace=None):
     enums = {}
     for name in schemas:
         s = schemas[name]
-        if 'enum' in s:
+        if "enum" in s:
             # add enum
             info = mapper[name]
             if info.__name__ not in enums:
@@ -326,7 +372,7 @@ def class_mapper(models, find_and_replace=None):
             enums[k] = v.replace(fi, rep)
 
     # this sorting only works in python3.7+
-    module_mapper['classes'] = {k: classes[k] for k in sorted(classes)}
-    module_mapper['enums'] = {k: enums[k] for k in sorted(enums)}
+    module_mapper["classes"] = {k: classes[k] for k in sorted(classes)}
+    module_mapper["enums"] = {k: enums[k] for k in sorted(enums)}
 
     return module_mapper
