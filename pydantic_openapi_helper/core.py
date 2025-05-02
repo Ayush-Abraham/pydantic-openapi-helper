@@ -1,6 +1,7 @@
 from typing import List, Any, Dict
 
-from pydantic.schema import schema
+# from pydantic.schema import schema
+from pydantic import TypeAdapter
 
 from .helper import clean_schemas
 from .inheritance import get_schemas_inheritance
@@ -13,28 +14,23 @@ _base_open_api = {
     "info": {},
     "externalDocs": {},
     "tags": [],
-    "x-tagGroups": [
-        {
-            "name": "Models",
-            "tags": []
-        }
-    ],
+    "x-tagGroups": [{"name": "Models", "tags": []}],
     "paths": {},
-    "components": {"schemas": {}}
+    "components": {"schemas": {}},
 }
 
 
 def get_openapi(
     base_object: List[Any],
-    title: str = None,
-    version: str = None,
+    title: str | None = None,
+    version: str | None = None,
     openapi_version: str = "3.0.2",
-    description: str = None,
-    info: dict = None,
-    external_docs: dict = None,
+    description: str | None = None,
+    info: dict | None = None,
+    external_docs: dict | None = None,
     inheritance: bool = False,
-    add_discriminator: bool = True
-        ) -> Dict:
+    add_discriminator: bool = True,
+) -> Dict:
     """Get openapi compatible dictionary from a list of Pydantic objects.
 
     Args:
@@ -57,41 +53,47 @@ def get_openapi(
 
     open_api = dict(_base_open_api)
 
-    open_api['openapi'] = openapi_version
+    open_api["openapi"] = openapi_version
 
     if info:
-        open_api['info'] = info
+        open_api["info"] = info
 
     if title:
-        open_api['info']['title'] = title
+        open_api["info"]["title"] = title
 
     if not version:
         raise ValueError(
-            'Schema version must be specified as argument or from distribution metadata'
+            "Schema version must be specified as argument or from distribution metadata"
         )
 
     if version:
-        open_api['info']['version'] = version
+        open_api["info"]["version"] = version
 
     if description:
-        open_api['info']['description'] = description
+        open_api["info"]["description"] = description
 
     if external_docs:
-        open_api['externalDocs'] = external_docs
+        open_api["externalDocs"] = external_docs
 
     if not inheritance:
-        schemas = schema(base_object, ref_prefix='#/components/schemas/')['definitions']
+        # schemas = schema(base_object, ref_prefix="#/components/schemas/")["definitions"]
+        adapter = TypeAdapter(base_object)
+        json_schema = adapter.json_schema(ref_template="#/components/schemas/{model}")
+        schemas = json_schema.get("$defs", {})
+
     else:
         schemas = get_schemas_inheritance(base_object)
 
     schemas, tags, tag_names = clean_schemas(
-        schemas, add_tags=True, add_discriminator=inheritance and add_discriminator,
-        add_type=True
+        schemas,
+        add_tags=True,
+        add_discriminator=inheritance and add_discriminator,
+        add_type=True,
     )
 
-    open_api['tags'] = tags
-    open_api['x-tagGroups'][0]['tags'] = tag_names
+    open_api["tags"] = tags
+    open_api["x-tagGroups"][0]["tags"] = tag_names
 
-    open_api['components']['schemas'] = schemas
+    open_api["components"]["schemas"] = schemas
 
     return open_api
