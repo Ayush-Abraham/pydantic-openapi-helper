@@ -1,7 +1,7 @@
 from typing import List, Any, Dict
 
-# from pydantic.schema import schema
-from pydantic import TypeAdapter
+from pydantic.v1.schema import schema
+# from pydantic import TypeAdapter
 
 from .helper import clean_schemas
 from .inheritance import get_schemas_inheritance
@@ -76,11 +76,7 @@ def get_openapi(
         open_api["externalDocs"] = external_docs
 
     if not inheritance:
-        # schemas = schema(base_object, ref_prefix="#/components/schemas/")["definitions"]
-        adapter = TypeAdapter(base_object)
-        json_schema = adapter.json_schema(ref_template="#/components/schemas/{model}")
-        schemas = json_schema.get("$defs", {})
-
+        schemas = schema(base_object, ref_prefix="#/components/schemas/")["definitions"]
     else:
         schemas = get_schemas_inheritance(base_object)
 
